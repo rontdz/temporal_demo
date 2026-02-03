@@ -1,21 +1,21 @@
-# Pre-Order System Demo
+# Pre-Order System Demo 
 
 A demonstration of an e-commerce pre-order workflow system built with Temporal.
 
 ---
 
-## Business Context
+## The Target Application
 
-This application simulates a **pre-order system** for products with future release dates (e.g., new iPhone, gaming console, limited edition items).
+Website X is an e-commerce platform that focuses on providing pre-order services to businesses.
 
-### The Challenge
+### The High Level Requirements
 
-Pre-orders present unique challenges for e-commerce systems:
-- Orders span **months** between placement and fulfillment
-- Multiple systems must coordinate (payment, inventory, fulfillment, delivery)
-- Failures at any stage require **automatic rollback** of all previous actions
-- Human intervention is needed at key checkpoints (fulfillment, delivery confirmation)
-- If customers don't complete the process by a deadline, the system must auto-cancel and refund
+As part of the pre-orders system, there are various requirements on how the workflow or transactions is handled:
+
+- Orders can span **months** between placement and fulfillment
+- Multiple systems must coordinate (payment gateway, inventory, fulfillment, delivery)
+- If suppliers don't fulfill the order by the stated fulfillment date, the system should cancel the order and refund
+- As per the usual e-commerce workflow, human intervention is needed at key checkpoints (fulfillment, delivery confirmation)
 
 ---
 
@@ -28,7 +28,7 @@ The pre-order process follows these stages:
 | Stage | Description |
 |-------|-------------|
 | **Place Order** | Customer submits a pre-order for an upcoming product |
-| **Payment** | Full payment is charged immediately via the payment gateway |
+| **Payment** | Full payment is charged immediately |
 | **Reserve Inventory** | Inventory is reserved in the warehouse system |
 | **Gap of Few Months** | System waits until the product release date |
 | **Fulfillment** | Product is picked and handed to delivery partner |
@@ -73,21 +73,72 @@ When cancellation or timeout occurs, the system automatically:
 1. Releases the inventory reservation
 2. Refunds the payment
 
-This happens in **reverse order** of the original actions, ensuring data consistency across all integrated systems.
+This happens in **reverse order** of the original actions (Saga pattern), ensuring data consistency across all integrated systems.
 
 ---
 
-## System Requirements Summary
+## System Design: Before vs After Temporal
 
-| Requirement | Description |
-|-------------|-------------|
-| **Long-running process** | Workflow spans months from pre-order to delivery |
-| **Multi-system coordination** | Integrates with payment, inventory, fulfillment, and delivery systems |
-| **Automatic retry** | Transient failures are automatically retried |
-| **Automatic rollback** | Failures trigger compensation in reverse order |
-| **Deadline enforcement** | Auto-cancel and refund if not fulfilled by release date + 1 week |
-| **Human checkpoints** | Manual triggers for fulfillment initiation, pickup, and delivery |
-| **Reminder notifications** | Periodic reminders when awaiting pickup |
+### Before Temporal: System Design for Scalability and Reliability
+
+![Before Temporal](img/before-temporal.jpg)
+
+Building this system without Temporal requires significant infrastructure and custom development:
+
+**Infrastructure Required (4 systems):**
+- Database (e.g., PostgreSQL)
+- Message Queue (e.g., Kafka)
+- Cache & Lock (e.g., Redis)
+- Observability (e.g., Prometheus, Grafana)
+
+**Supporting Services to Build (6 services):**
+
+| Service | Purpose |
+|---------|---------|
+| **State Management** | Track transaction status, checkpoints, crash recovery |
+| **Retry Mechanism** | Exponential backoff, circuit breaker, idempotency |
+| **Task Scheduler** | Durable timer, recurring jobs |
+| **Saga Orchestrator** | Reverse transaction compensation |
+| **Manual Interaction** | Integrate with external input, wait for callbacks |
+| **Observability** | Tracing, metrics, dashboard instrumentation |
+
+Each service requires careful design for enterprise-grade operation, reliability, and scalability. The infrastructure also requires consideration for high availability, scalability, and blast radius.
+
+---
+
+### After Temporal: Simplification
+
+![After Temporal](img/after-temporal.jpg)
+
+With Temporal, the architecture is dramatically simplified:
+
+**Infrastructure Required (2 systems):**
+- Database* (e.g., PostgreSQL) - for business data only
+- Temporal Cloud (includes observability)
+
+**Supporting Services to Build: 0**
+
+All capabilities are provided natively by Temporal:
+- Workflow orchestration
+- Activities with automatic retry
+- Durable scheduling/timers
+- Saga compensation
+- Signals for human interaction
+- Built-in observability
+
+*\*Simplified DB design for business data only (orders, customers). Supporting services data are stored in Temporal Cloud.*
+
+---
+
+### Key Values: Before → After Temporal
+
+| Aspect | Before | After |
+|--------|--------|-------|
+| **Infrastructure** | 4 systems | 2 systems |
+| **Supporting Services** | 6 to build | 0 (built-in) |
+| **Business Logic** | Same | Same |
+| **Observability** | Build yourself | Included |
+| **Operations Overhead** | High | Low |
 
 ---
 
@@ -164,7 +215,7 @@ python client.py place-order
 
 # Don't send any commands - wait for 1 week timeout
 # The system will automatically cancel and refund
-# (For demo, you can observe the durable timer state in Temporal UI)
+# (For demo, you can modify the timeout duration in workflow.py)
 ```
 
 ---

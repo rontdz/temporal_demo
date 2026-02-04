@@ -8,6 +8,12 @@ from models import PreOrder
 from workflow import PreOrderWorkflow
 
 
+async def get_workflow_handle(workflow_id: str):
+    """Helper to get a workflow handle"""
+    client = await Client.connect("localhost:7233")
+    return client.get_workflow_handle(workflow_id)
+
+
 async def place_order():
     """Place a new pre-order"""
     client = await Client.connect("localhost:7233")
@@ -50,43 +56,34 @@ async def place_order():
 
 async def start_fulfillment(workflow_id: str):
     """Signal: Start the fulfillment process"""
-    client = await Client.connect("localhost:7233")
-    handle = client.get_workflow_handle(workflow_id)
-
+    handle = await get_workflow_handle(workflow_id)
     await handle.signal("start_fulfillment")
-    print(f"✅ Signal 'start_fulfillment' sent")
-    print(f"   Next: send 'item-picked' when warehouse picks the item")
+    print(f"✅ Fulfillment initiated. You will receive a notification when processed.")
+    print(f"   Next: Run 'item-picked' when the item has been picked from warehouse.")
 
 
 async def cancel_order(workflow_id: str):
     """Signal: Cancel the order (triggers saga compensation)"""
-    client = await Client.connect("localhost:7233")
-    handle = client.get_workflow_handle(workflow_id)
-
+    handle = await get_workflow_handle(workflow_id)
     await handle.signal("cancel_order")
-    print(f"✅ Signal 'cancel_order' sent")
-    print(f"   SAGA compensation will run in reverse order!")
+    print(f"✅ Cancellation initiated. Compensation will run in reverse order.")
+    print(f"   You will receive a refund notification when processed.")
 
 
 async def item_picked(workflow_id: str):
     """Signal: External delivery system picked up the item"""
-    client = await Client.connect("localhost:7233")
-    handle = client.get_workflow_handle(workflow_id)
-
+    handle = await get_workflow_handle(workflow_id)
     await handle.signal("item_picked")
-    print(f"✅ Signal 'item_picked' sent")
-    print(f"   Item is now on its way!")
-    print(f"   Next: send 'confirm-delivery' when delivered")
+    print(f"✅ Item pickup confirmed. Delivery is now in progress.")
+    print(f"   Next: Run 'confirm-delivery' when the item has been delivered.")
 
 
 async def confirm_delivery(workflow_id: str):
     """Signal: Confirm delivery complete"""
-    client = await Client.connect("localhost:7233")
-    handle = client.get_workflow_handle(workflow_id)
-
+    handle = await get_workflow_handle(workflow_id)
     await handle.signal("confirm_delivery")
-    print(f"✅ Signal 'confirm_delivery' sent")
-    print(f"   Order complete! 🎉")
+    print(f"✅ Delivery confirmed. Order will be marked as completed.")
+    print(f"   You will receive a completion notification when processed.")
 
 
 # =============================================================================
@@ -95,9 +92,7 @@ async def confirm_delivery(workflow_id: str):
 
 async def get_status(workflow_id: str):
     """Query: Get order status"""
-    client = await Client.connect("localhost:7233")
-    handle = client.get_workflow_handle(workflow_id)
-
+    handle = await get_workflow_handle(workflow_id)
     status = await handle.query("get_status")
     print(f"📋 Order Status:")
     print(f"   Order ID: {status['order_id']}")
@@ -106,13 +101,36 @@ async def get_status(workflow_id: str):
 
 async def get_compensation_log(workflow_id: str):
     """Query: Get compensation log (actions recorded for saga)"""
-    client = await Client.connect("localhost:7233")
-    handle = client.get_workflow_handle(workflow_id)
-
+    handle = await get_workflow_handle(workflow_id)
     log = await handle.query("get_compensation_log")
     print(f"📜 Compensation Log ({len(log)} actions recorded):")
     for i, record in enumerate(log, 1):
         print(f"   {i}. {record['action']} → {record['resource_id']}")
+
+
+async def get_deadline_info(workflow_id: str):
+    """Query: Get deadline and remaining time"""
+    handle = await get_workflow_handle(workflow_id)
+    info = await handle.query("get_deadline_info")
+
+    if not info["deadline"]:
+        print("⏰ No deadline set (workflow not in waiting phase)")
+        return
+
+    # Calculate remaining time on client side (using real current time)
+    deadline_dt = datetime.fromisoformat(info["deadline"])
+    now = datetime.now(timezone.utc)
+    remaining = (deadline_dt - now).total_seconds()
+    remaining = max(0, remaining)
+
+    days = int(remaining // 86400)
+    hours = int((remaining % 86400) // 3600)
+    minutes = int((remaining % 3600) // 60)
+    seconds = int(remaining % 60)
+
+    print(f"⏰ Deadline Info:")
+    print(f"   Deadline: {info['deadline']}")
+    print(f"   Remaining: {days}d {hours}h {minutes}m {seconds}s")
 
 
 # =============================================================================
@@ -134,6 +152,7 @@ def print_usage():
     print("")
     print("Queries:")
     print("  python client.py status <workflow_id>")
+    print("  python client.py deadline <workflow_id>")
     print("  python client.py compensation-log <workflow_id>")
 
 
@@ -181,6 +200,12 @@ def main():
             print("Error: workflow_id required")
             return
         asyncio.run(get_status(sys.argv[2]))
+
+    elif command == "deadline":
+        if len(sys.argv) < 3:
+            print("Error: workflow_id required")
+            return
+        asyncio.run(get_deadline_info(sys.argv[2]))
 
     elif command == "compensation-log":
         if len(sys.argv) < 3:

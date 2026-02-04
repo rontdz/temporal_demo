@@ -207,17 +207,6 @@ python client.py place-order
 python client.py cancel <workflow_id>
 ```
 
-### 6. Test Timeout (Auto-Refund)
-
-```bash
-# Place an order
-python client.py place-order
-
-# Don't send any commands - wait for 1 week timeout
-# The system will automatically cancel and refund
-# (For demo, you can modify the timeout duration in workflow.py)
-```
-
 ---
 
 ## CLI Commands Reference
@@ -230,6 +219,7 @@ python client.py place-order
 | `python client.py item-picked <id>` | Confirm item pickup |
 | `python client.py confirm-delivery <id>` | Confirm delivery complete |
 | `python client.py status <id>` | Check order status |
+| `python client.py deadline <id>` | Check deadline and remaining time |
 | `python client.py compensation-log <id>` | View rollback actions |
 
 ---

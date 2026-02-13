@@ -149,7 +149,7 @@ class PreOrderWorkflow:
         reminder_interval = timedelta(seconds=20)
         reminder_count = 0
 
-        # Continue send reminder until pick up
+        # Continue send reminder every 20 seconds until pick up signal
         while not self.item_picked_confirmed:
             try:
                 await workflow.wait_condition(lambda: self.item_picked_confirmed, timeout=reminder_interval)
@@ -236,13 +236,16 @@ class PreOrderWorkflow:
     # HELPERS
     # =========================================================================
 
+    # State management
     def _set_state(self, new_state: OrderState):
         workflow.logger.info(f"State: {self.state.value} -> {new_state.value}")
         self.state = new_state
 
+    # Record compensation actions in order
     def _record_compensation(self, action: str, resource_id: str):
         self.compensation_log.append(CompensationRecord(action=action, resource_id=resource_id))
 
+    # Send notification (helper)
     async def _notify(self, subject: str, message: str):
         await workflow.execute_activity(
             "send_notification",
@@ -250,17 +253,20 @@ class PreOrderWorkflow:
             start_to_close_timeout=timedelta(seconds=10),
         )
 
+    # Saga compensation (reverse order)
     async def _compensate(self):
         """Execute compensation in REVERSE order (Saga pattern)"""
         self._set_state(OrderState.REFUNDED)
         workflow.logger.info(f"====== SAGA COMPENSATION ({len(self.compensation_log)} actions) ======")
 
+        # Map actions to their compensation activities
         compensation_map = {
             "payment_charged": "refund_payment",
             "inventory_reserved": "release_inventory",
             "fulfillment_created": "cancel_fulfillment",
         }
 
+        # Execute compensation in reverse order
         for record in reversed(self.compensation_log):
             activity_name = compensation_map.get(record.action)
             if activity_name:

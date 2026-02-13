@@ -142,6 +142,24 @@ All capabilities are provided natively by Temporal:
 
 ---
 
+## Temporal Implementation Design
+
+![Temporal Workflow Design](img/temporal-design.jpg)
+
+The diagram above shows how each workflow stage maps to Temporal primitives in the implementation:
+
+| Stage | Temporal Primitive | Details |
+|-------|-------------------|---------|
+| **Payment Processing** | Activity + RetryPolicy | `charge_payment` activity with retry (max 3 attempts). Records `payment_charged` in Saga log |
+| **Reserve Inventory** | Activity + RetryPolicy | `reserve_inventory` activity with retry (max 3 attempts). Records `inventory_reserved` in Saga log |
+| **Pending Until Release Date + 1 Week** | Durable Timer via `workflow.wait_condition` | Waits with timeout until deadline. Listens for `start_fulfillment` or `cancel_order` signals during the wait |
+| **Fulfillment** | Signal → Activity | `start_fulfillment` signal triggers `create_fulfillment` and `request_pickup` activities. Records `fulfillment_created` in Saga log |
+| **Item Picked?** | Signal + Timer loop | Waits for `item_picked` signal. Sends periodic reminder notifications via `send_notification` activity while waiting |
+| **Item Delivered?** | Signal | `confirm_delivery` signal completes the workflow |
+| **Compensation** | Saga (`reversed(compensation_log)`) | On cancellation or timeout, executes compensation activities in reverse order with aggressive retry (max 100 attempts) |
+
+---
+
 ## Setup and Demo
 
 ### Prerequisites
